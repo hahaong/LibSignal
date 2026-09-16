@@ -4,8 +4,8 @@ import numpy as np
 import os
 import random
 from collections import OrderedDict, deque
-import gym
-
+import gymnasium as gym
+from common.utils import DecayThenFlatSchedule
 from generator.lane_vehicle import LaneVehicleGenerator
 from generator.intersection_phase import IntersectionPhaseGenerator
 import torch
@@ -20,6 +20,7 @@ from torch_geometric.data import Data, Batch
 from torch_geometric.utils import add_self_loops
 
 
+
 @Registry.register_model('colight')
 class CoLightAgent(RLAgent):
     #  TODO: test multiprocessing effect on agents or need deep copy here
@@ -32,7 +33,6 @@ class CoLightAgent(RLAgent):
         # TODO: different phases matching
         self.buffer_size = Registry.mapping['trainer_mapping']['setting'].param['buffer_size']
         self.replay_buffer = deque(maxlen=self.buffer_size)
-
         self.graph = Registry.mapping['world_mapping']['graph_setting'].graph
         self.world = world
         self.sub_agents = len(self.world.intersections)
@@ -119,8 +119,12 @@ class CoLightAgent(RLAgent):
         self.gamma = Registry.mapping['model_mapping']['setting'].param['gamma']
         self.grad_clip = Registry.mapping['model_mapping']['setting'].param['grad_clip']
         self.epsilon = Registry.mapping['model_mapping']['setting'].param['epsilon']
-        self.epsilon_decay = Registry.mapping['model_mapping']['setting'].param['epsilon_decay']
+        # self.epsilon_decay = Registry.mapping['model_mapping']['setting'].param['epsilon_decay']
         self.epsilon_min = Registry.mapping['model_mapping']['setting'].param['epsilon_min']
+        self.epsilon_anneal_time = Registry.mapping['model_mapping']['setting'].param['epsilon_anneal_time']
+        self.schedule = DecayThenFlatSchedule(self.epsilon, self.epsilon_min, self.epsilon_anneal_time,
+                                              decay="linear")
+        self.epsilon = self.schedule.eval(0)
         self.learning_rate = Registry.mapping['model_mapping']['setting'].param['learning_rate']
         self.vehicle_max = Registry.mapping['model_mapping']['setting'].param['vehicle_max']
         self.batch_size = Registry.mapping['model_mapping']['setting'].param['batch_size']
@@ -238,7 +242,7 @@ class CoLightAgent(RLAgent):
         delay = np.squeeze(np.array(delay, dtype=np.float32))
         return delay # [intersections,]
 
-    def get_action(self, ob, phase, test=False):
+    def get_action(self, ob, phase, t_env, test=False):
         """
         input are np.array here
         # TODO: support irregular input in the future
@@ -247,6 +251,9 @@ class CoLightAgent(RLAgent):
         :param test: boolean, exploit while training and determined while testing
         :return: [batch, agents] -> action taken by environment
         """
+
+        self.epsilon = self.schedule.eval(t_env)
+
         if not test:
             if np.random.rand() <= self.epsilon:
                 return self.sample()
@@ -337,8 +344,8 @@ class CoLightAgent(RLAgent):
         loss.backward()
         clip_grad_norm_(self.model.parameters(), self.grad_clip)
         self.optimizer.step()
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
+        # if self.epsilon > self.epsilon_min:
+        #     self.epsilon *= self.epsilon_decay
         return loss.clone().detach().numpy()
 
     def update_target_network(self):

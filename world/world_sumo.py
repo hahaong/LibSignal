@@ -17,7 +17,7 @@ from common.registry import Registry
 import json
 import re
 import copy
-
+import numpy as np
 import sumolib
 import libsumo
 import traci
@@ -389,6 +389,7 @@ class World(object):
                          '--no-warnings', str(sumo_dict['no_warning'])]
         self.net = os.path.join(sumo_dict['dir'], sumo_dict['roadnetFile'])
         self.route = os.path.join(sumo_dict['dir'], sumo_dict['flowFile'])
+        sumo_cmd += ['--waiting-time-memory', '3600']
         self.sumo_cmd = sumo_cmd
         self.warning = sumo_dict['no_warning']
         print("building world...")
@@ -845,7 +846,27 @@ class World(object):
             lane_delay[key] = 1 - lane_avg_speed / speed_limit
         return lane_delay
 
-    # def get_plan_depart_time(self):
+    def get_accumulated_waiting_time(self):
+        vehicles = self.eng.vehicle.getIDList()
+        accumulated_waiting_times = [self.eng.vehicle.getAccumulatedWaitingTime(vehicle) for vehicle in vehicles]
+        return sum(accumulated_waiting_times)
+
+    def get_total_stopped(self):
+        vehicles = self.eng.vehicle.getIDList()
+        speeds = [self.eng.vehicle.getSpeed(vehicle) for vehicle in vehicles]
+        return sum(int(speed < 0.1) for speed in speeds)
+
+    def get_mean_waiting_time(self):
+        vehicles = self.eng.vehicle.getIDList()
+        waiting_times = [self.eng.vehicle.getWaitingTime(vehicle) for vehicle in vehicles]
+        return 0.0 if len(vehicles) == 0 else np.mean(waiting_times)
+
+    def get_mean_speed(self):
+        vehicles = self.eng.vehicle.getIDList()
+        speeds = [self.eng.vehicle.getSpeed(vehicle) for vehicle in vehicles]
+        return 0.0 if len(vehicles) == 0 else np.mean(speeds)
+
+        # def get_plan_depart_time(self):
     #     """
     #     Get planned depart time for all vehicles appeared in sumo.rou.xml file.
     #     In SUMO and Cityflow, travel time = arriving time-planned depart time.

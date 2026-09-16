@@ -5,7 +5,8 @@ import numpy as np
 import os
 import random
 from collections import deque
-import gym
+from common.utils import DecayThenFlatSchedule
+import gymnasium as gym
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -50,8 +51,12 @@ class PressLightAgent(RLAgent):
         self.gamma = Registry.mapping['model_mapping']['setting'].param['gamma']
         self.grad_clip = Registry.mapping['model_mapping']['setting'].param['grad_clip']
         self.epsilon = Registry.mapping['model_mapping']['setting'].param['epsilon']
-        self.epsilon_decay = Registry.mapping['model_mapping']['setting'].param['epsilon_decay']
+        # self.epsilon_decay = Registry.mapping['model_mapping']['setting'].param['epsilon_decay']
         self.epsilon_min = Registry.mapping['model_mapping']['setting'].param['epsilon_min']
+        self.epsilon_anneal_time = Registry.mapping['model_mapping']['setting'].param['epsilon_anneal_time']
+        self.schedule = DecayThenFlatSchedule(self.epsilon, self.epsilon_min, self.epsilon_anneal_time,
+                                              decay="linear")
+        self.epsilon = self.schedule.eval(0)
         self.learning_rate = Registry.mapping['model_mapping']['setting'].param['learning_rate']
         self.batch_size = Registry.mapping['model_mapping']['setting'].param['batch_size']
         self.dic_agent_conf = Registry.mapping['model_mapping']['setting']
@@ -128,7 +133,7 @@ class PressLightAgent(RLAgent):
         phase = (np.concatenate(phase)).astype(np.int8)
         return phase
     
-    def get_action(self, ob, phase, test=False):
+    def get_action(self, ob, phase,t_env, test=False):
         '''
         get_action
         Generate action.
@@ -138,6 +143,9 @@ class PressLightAgent(RLAgent):
         :param test: boolean, decide whether is test process
         :return: action that has the highest score
         '''
+
+        self.epsilon = self.schedule.eval(t_env)
+
         if not test:
             if np.random.rand() <= self.epsilon:
                 return self.sample()
@@ -244,8 +252,8 @@ class PressLightAgent(RLAgent):
         loss.backward()
         clip_grad_norm_(self.model.parameters(), self.grad_clip)
         self.optimizer.step()
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
+        # if self.epsilon > self.epsilon_min:
+        #     self.epsilon *= self.epsilon_decay
         return loss.clone().detach().numpy()
 
     def update_target_network(self):

@@ -7,9 +7,9 @@ model:
   train_model: True
   graphic: True
   vehicle_max: 1
-  epsilon: 0.8
+  epsilon: 1
   epsilon_decay: 0.9995
-  epsilon_min: 0.01
+  epsilon_min: 0.05
   NEIGHBOR_NUM: 4
   NEIGHBOR_EDGE_NUM: 4
   N_LAYERS: 1
@@ -26,3 +26,5 @@ model:
 
 trainer:
   learning_start: 1000
+  update_model_rate: 1
+  update_target_rate: 10

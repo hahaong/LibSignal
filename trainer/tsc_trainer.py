@@ -4,7 +4,8 @@ from common.metrics import Metrics
 from environment import TSCEnv
 from common.registry import Registry
 from trainer.base_trainer import BaseTrainer
-
+import pandas as pd
+from pathlib import Path
 
 @Registry.register_trainer("tsc")
 class TSCTrainer(BaseTrainer):
@@ -45,6 +46,8 @@ class TSCTrainer(BaseTrainer):
         self.dataset.initiate(ep=self.episodes, step=self.steps, interval=self.action_interval)
         self.yellow_time = Registry.mapping['trainer_mapping']['setting'].param['yellow_length']
         # consists of path of output dir + log_dir + file handlers name
+        self.csv_file = Registry.mapping['logger_mapping']['setting'].param['root_dir'] + Registry.mapping['command_mapping']['setting'].param['csv_name'] + ".csv"
+
         self.log_file = os.path.join(Registry.mapping['logger_mapping']['path'].path,
                                      Registry.mapping['logger_mapping']['setting'].param['log_dir'],
                                      os.path.basename(self.logger.handlers[-1].baseFilename).rstrip('_BRF.log') + '_DTL.log'
@@ -72,7 +75,7 @@ class TSCTrainer(BaseTrainer):
         '''
         if Registry.mapping['command_mapping']['setting'].param['delay_type'] == 'apx':
             lane_metrics = ['rewards', 'queue', 'delay']
-            world_metrics = ['real avg travel time', 'throughput']
+            world_metrics = ['real avg travel time', 'throughput','system_total_stopped','system_accumulated_waiting_times','system_mean_waiting_time','system_mean_speed']
         else:
             lane_metrics = ['rewards', 'queue']
             world_metrics = ['delay', 'real avg travel time', 'throughput']
@@ -120,10 +123,19 @@ class TSCTrainer(BaseTrainer):
         '''
         total_decision_num = 0
         flush = 0
+
+        episodes_reward_list = []
+        system_accumulated_waiting_times = []
+        system_total_stopped = []
+        system_mean_waiting_time = []
+        system_mean_speed = []
+        t_env = 0
         for e in range(self.episodes):
             # TODO: check this reset agent
             self.metric.clear()
             last_obs = self.env.reset()  # agent * [sub_agent, feature]
+
+
 
             for a in self.agents:
                 a.reset()
@@ -142,7 +154,7 @@ class TSCTrainer(BaseTrainer):
                     if total_decision_num > self.learning_start:
                         actions = []
                         for idx, ag in enumerate(self.agents):
-                            actions.append(ag.get_action(last_obs[idx], last_phase[idx], test=False))                            
+                            actions.append(ag.get_action(last_obs[idx], last_phase[idx], t_env, test=False))
                         actions = np.stack(actions)  # [agent, intersections]
                     else:
                         actions = np.stack([ag.sample() for ag in self.agents])
@@ -155,6 +167,7 @@ class TSCTrainer(BaseTrainer):
                     for _ in range(self.action_interval):
                         obs, rewards, dones, _ = self.env.step(actions.flatten())
                         i += 1
+                        t_env += 1
                         rewards_list.append(np.stack(rewards))
                     rewards = np.mean(rewards_list, axis=0)  # [agent, intersection]
                     self.metric.update(rewards)
@@ -185,9 +198,21 @@ class TSCTrainer(BaseTrainer):
                 mean_loss = np.mean(np.array(episode_loss))
             else:
                 mean_loss = 0
-            
-            self.writeLog("TRAIN", e, self.metric.real_average_travel_time(),\
-                mean_loss, self.metric.rewards(), self.metric.queue(), self.metric.delay(), self.metric.throughput())
+
+            # self.metric.rewards() = sum of agent's independent reward * (decision_num) Note that: decision_num = total step / action interval
+            # self.metric.queue() = Represent average queue length of every junction. Notes: sum of all junction queue length, records every agents' queue length, incrementally increasing in every action interval, resultlist = (16,), and lastly resultlist / (decision_number * num_intersection)
+            # self.metric.delay() =
+            # self.metric.throughput()
+            episodes_reward_list.append(self.metric.episodic_reward())
+            num_total_episode_list = list(range(e+1))
+            episodes_seq2seq_loss_list = [0] * len(num_total_episode_list)
+            system_accumulated_waiting_times.append(self.metric.get_accumulated_waiting_time())
+            system_total_stopped.append(self.metric.get_total_stopped())
+            system_mean_waiting_time.append(self.metric.get_mean_waiting_time())
+            system_mean_speed.append(self.metric.get_mean_speed())
+
+            self.writecsv(num_total_episode_list, episodes_reward_list, episodes_seq2seq_loss_list, system_accumulated_waiting_times,system_total_stopped,system_mean_waiting_time,system_mean_speed)
+            # self.writeLog("TRAIN", e, self.metric.real_average_travel_time(), mean_loss, self.metric.rewards(), self.metric.queue(), self.metric.delay(), self.metric.throughput())
             self.logger.info("step:{}/{}, q_loss:{}, rewards:{}, queue:{}, delay:{}, throughput:{}".format(i, self.steps,\
                 mean_loss, self.metric.rewards(), self.metric.queue(), self.metric.delay(), int(self.metric.throughput())))
             if e % self.save_rate == 0:
@@ -211,6 +236,7 @@ class TSCTrainer(BaseTrainer):
         '''
         obs = self.env.reset()
         self.metric.clear()
+        t_env=0
         for a in self.agents:
             a.reset()
         for i in range(self.test_steps):
@@ -218,12 +244,13 @@ class TSCTrainer(BaseTrainer):
                 phases = np.stack([ag.get_phase() for ag in self.agents])
                 actions = []
                 for idx, ag in enumerate(self.agents):
-                    actions.append(ag.get_action(obs[idx], phases[idx], test=True))
+                    actions.append(ag.get_action(obs[idx], phases[idx], t_env, test=True))
                 actions = np.stack(actions)
                 rewards_list = []
                 for _ in range(self.action_interval):
                     obs, rewards, dones, _ = self.env.step(actions.flatten())  # make sure action is [intersection]
                     i += 1
+                    t_env += 0
                     rewards_list.append(np.stack(rewards))
                 rewards = np.mean(rewards_list, axis=0)  # [agent, intersection]
                 self.metric.update(rewards)
@@ -244,6 +271,7 @@ class TSCTrainer(BaseTrainer):
         :param drop_load: decide whether to load pretrained model's parameters
         :return self.metric: including queue length, throughput, delay and travel time
         '''
+        t_env=999999
         if Registry.mapping['command_mapping']['setting'].param['world'] == 'cityflow':
             if self.save_replay:
                 self.env.eng.set_save_replay(True)
@@ -262,7 +290,7 @@ class TSCTrainer(BaseTrainer):
                 phases = np.stack([ag.get_phase() for ag in self.agents])
                 actions = []
                 for idx, ag in enumerate(self.agents):
-                    actions.append(ag.get_action(obs[idx], phases[idx], test=True))
+                    actions.append(ag.get_action(obs[idx], phases[idx], t_env, test=True))
                 actions = np.stack(actions)
                 rewards_list = []
                 for j in range(self.action_interval):
@@ -299,3 +327,24 @@ class TSCTrainer(BaseTrainer):
         log_handle.write(res + "\n")
         log_handle.close()
 
+    def writecsv(self,num_total_episode_list, episodes_reward_list, episodes_seq2seq_loss_list, system_accumulated_waiting_times,system_total_stopped,system_mean_waiting_time,system_mean_speed):
+        # print(num_total_episode_list)
+        # print(episodes_reward_list)
+        # print(episodes_seq2seq_loss_list)
+        # print(system_accumulated_waiting_times)
+        # print(system_total_stopped)
+        # print(system_mean_waiting_time)
+        # print(system_mean_speed)
+        # print('a')
+        metrics = {
+            "Epochs":num_total_episode_list,
+            "Reward":episodes_reward_list,
+            "seq2seqLoss": episodes_seq2seq_loss_list,
+            "system_accumulated_waiting_times" : system_accumulated_waiting_times,
+            "system_total_stopped" : system_total_stopped,
+            "system_mean_waiting_time" : system_mean_waiting_time,
+            "system_mean_speed" : system_mean_speed,
+        }
+        df = pd.DataFrame(metrics)
+        Path(Path(self.csv_file).parent).mkdir(parents=True, exist_ok=True)
+        df.to_csv(self.csv_file, index=False)

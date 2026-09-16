@@ -24,7 +24,11 @@ class Metrics(object):
         self.lane_metrics = dict()
         self.lane_metrics['rewards'] =  np.array([0 for _ in range(len(self.world.intersections))], dtype=np.float32)
         self.lane_metrics.update({k : np.array([0 for _ in range(len(self.world.intersections))], dtype=np.float32) for k in self.lane_metric_List})
-        self.world_metrics = world_metrics
+        self.world_metrics_list = world_metrics
+        self.world_metrics = dict()
+        self.world_metrics.update({k : [] for k in self.world_metrics_list})
+
+
 
     def update(self, rewards=None):
         '''
@@ -42,7 +46,18 @@ class Metrics(object):
         if 'queue' in self.lane_metrics.keys():
             self.lane_metrics['queue'] += (np.stack(np.array(
                 [ag.get_queue() for ag in self.agents], dtype=np.float32))).flatten()
+
+        if 'system_total_stopped' in self.world_metrics.keys():
+            self.world_metrics['system_total_stopped'].append(self.world.get_total_stopped())
+        if 'system_accumulated_waiting_times' in self.world_metrics.keys():
+            self.world_metrics['system_accumulated_waiting_times'].append(self.world.get_accumulated_waiting_time())
+        if 'system_mean_waiting_time' in self.world_metrics.keys():
+            self.world_metrics['system_mean_waiting_time'].append(self.world.get_mean_waiting_time())
+        if 'system_mean_speed' in self.world_metrics.keys():
+            self.world_metrics['system_mean_speed'].append(self.world.get_mean_speed())
+
         self.decision_num += 1
+
 
     def clear(self):
         '''
@@ -100,6 +115,21 @@ class Metrics(object):
             print('queue in not recorded in lane_metrics, please add it into the list')
             return None
 
+    def total_queue(self):
+        '''
+        queue
+        Calculate total queue length of all lanes.
+
+        :param: None
+        :return: total queue length
+        '''
+        try:
+            result = self.lane_metrics['queue']
+            return np.sum(result) / (self.decision_num)
+        except KeyError:
+            print('queue in not recorded in lane_metrics, please add it into the list')
+            return None
+
     def lane_queue(self):
         '''
         lane_queue
@@ -113,6 +143,40 @@ class Metrics(object):
             return result / self.decision_num
         except KeyError:
             print(('queue in not recorded in lane_metrics, please add it into the list'))
+            return None
+
+    def get_accumulated_waiting_time(self):
+        try:
+            result = self.world_metrics['system_accumulated_waiting_times']
+            return result[-1]
+        except KeyError:
+            print(('system_accumulated_waiting_times in not recorded in world_metrics, please add it into the list'))
+            return None
+
+    def get_total_stopped(self):
+        try:
+            result = self.world_metrics['system_total_stopped']
+            return np.mean(result)
+        except KeyError:
+            print(('system_total_stopped in not recorded in world_metrics, please add it into the list'))
+            return None
+
+    def get_mean_waiting_time(self):
+        try:
+            result = self.world_metrics['system_mean_waiting_time']
+            return np.mean(result)
+        except KeyError:
+            print(
+                ('system_mean_waiting_time in not recorded in world_metrics, please add it into the list'))
+            return None
+
+    def get_mean_speed(self):
+        try:
+            result = self.world_metrics['system_mean_speed']
+            return np.mean(result)
+        except KeyError:
+            print(
+                ('system_mean_speed in not recorded in world_metrics, please add it into the list'))
             return None
 
     def rewards(self):
@@ -136,7 +200,11 @@ class Metrics(object):
         '''
         result = self.lane_metrics['rewards']
         return result / self.decision_num
-    
+
+    def episodic_reward(self):
+        result = self.lane_metrics['rewards']
+        return np.sum(result)
+
     def throughput(self):
         '''
         throughput

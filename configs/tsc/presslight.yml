@@ -6,9 +6,9 @@ model:
   name: presslight
   train_model: True
   d_dense: 20
-  epsilon: 0.1
+  epsilon: 1
   epsilon_decay: 0.995
-  epsilon_min: 0.01
+  epsilon_min: 0.05
   one_hot: True
   phase: True
 
@@ -17,3 +17,5 @@ model:
 trainer:
   learning_start: 1000
   buffer_size: 5000
+  update_model_rate: 1
+  update_target_rate: 10

@@ -199,10 +199,6 @@ class TSCTrainer(BaseTrainer):
             else:
                 mean_loss = 0
 
-            # self.metric.rewards() = sum of agent's independent reward * (decision_num) Note that: decision_num = total step / action interval
-            # self.metric.queue() = Represent average queue length of every junction. Notes: sum of all junction queue length, records every agents' queue length, incrementally increasing in every action interval, resultlist = (16,), and lastly resultlist / (decision_number * num_intersection)
-            # self.metric.delay() =
-            # self.metric.throughput()
             episodes_reward_list.append(self.metric.episodic_reward())
             num_total_episode_list = list(range(e+1))
             episodes_seq2seq_loss_list = [0] * len(num_total_episode_list)
@@ -215,16 +211,16 @@ class TSCTrainer(BaseTrainer):
             # self.writeLog("TRAIN", e, self.metric.real_average_travel_time(), mean_loss, self.metric.rewards(), self.metric.queue(), self.metric.delay(), self.metric.throughput())
             self.logger.info("step:{}/{}, q_loss:{}, rewards:{}, queue:{}, delay:{}, throughput:{}".format(i, self.steps,\
                 mean_loss, self.metric.rewards(), self.metric.queue(), self.metric.delay(), int(self.metric.throughput())))
-            if e % self.save_rate == 0:
-                [ag.save_model(e=e) for ag in self.agents]
+            # if e % self.save_rate == 0:
+            #     [ag.save_model(e=e) for ag in self.agents]
             self.logger.info("episode:{}/{}, real avg travel time:{}".format(e, self.episodes, self.metric.real_average_travel_time()))
             for j in range(len(self.world.intersections)):
                 self.logger.debug("intersection:{}, mean_episode_reward:{}, mean_queue:{}".format(j, self.metric.lane_rewards()[j],\
                      self.metric.lane_queue()[j]))
             if self.test_when_train:
                 self.train_test(e)
-        # self.dataset.flush([ag.replay_buffer for ag in self.agents])
-        [ag.save_model(e=self.episodes) for ag in self.agents]
+        # self.dataset.flush([ag.replay_buffer for ag in self.agents]) # originally it is commented
+        # [ag.save_model(e=self.episodes) for ag in self.agents]
 
     def train_test(self, e):
         '''
@@ -259,8 +255,8 @@ class TSCTrainer(BaseTrainer):
         self.logger.info("Test step:{}/{}, travel time :{}, rewards:{}, queue:{}, delay:{}, throughput:{}".format(\
             e, self.episodes, self.metric.real_average_travel_time(), self.metric.rewards(),\
             self.metric.queue(), self.metric.delay(), int(self.metric.throughput())))
-        self.writeLog("TEST", e, self.metric.real_average_travel_time(),\
-            100, self.metric.rewards(),self.metric.queue(),self.metric.delay(), self.metric.throughput())
+        # self.writeLog("TEST", e, self.metric.real_average_travel_time(),\
+        #     100, self.metric.rewards(),self.metric.queue(),self.metric.delay(), self.metric.throughput())
         return self.metric.real_average_travel_time()
 
     def test(self, drop_load=True):

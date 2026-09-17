@@ -1,3 +1,8 @@
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+# Set these as well to be safe
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 import task
 import trainer
 import agent
@@ -10,11 +15,6 @@ import time
 from datetime import datetime
 import argparse
 
-import os
-os.environ["OMP_NUM_THREADS"] = "1"
-# Set these as well to be safe
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 
 # parseargs
